@@ -1,9 +1,8 @@
-from tornado import web, ioloop, gen
 from sockjs.tornado import SockJSRouter, SockJSConnection
+from tornado import web, ioloop, gen
 
 
 class SimpleEchoClient(SockJSConnection):
-
     clients = set()
 
     def on_open(self, request):
@@ -35,7 +34,8 @@ if __name__ == '__main__':
     def on_shutdown():
         ioloop.IOLoop.current().stop()
 
-    SimpleEchoRouter = SockJSRouter(SimpleEchoClient, '/echo', user_settings={"websocket_allow_origin":"*", 'disabled_transports': []})
+    SimpleEchoRouter = SockJSRouter(SimpleEchoClient, '/echo',
+                                    user_settings={"websocket_allow_origin": "*", 'disabled_transports': []})
     app = web.Application(SimpleEchoRouter.urls)
     app.listen(8080)
 
