@@ -29,21 +29,20 @@ class WSConnecterPlayer:
         yield self.connect()
         while self.conn:
             msg = yield self.conn.read_message()
-            if not msg:
-                yield self.close()
-                return
-            print(msg)
+            if msg:
+                print(msg)
+            else:
+                break
         exit(1)
 
-    @gen.coroutine
     def close(self):
         self.conn.close()
         self.io_loop.stop()
 
 
 if __name__ == '__main__':
-    import signal
     import logging
+    import signal
 
     logging.basicConfig(level=logging.DEBUG)
 

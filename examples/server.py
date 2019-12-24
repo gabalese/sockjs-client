@@ -10,7 +10,7 @@ class SimpleEchoClient(SockJSConnection):
         print(self.clients)
 
         # Just give me some random message back please
-        self.hb = ioloop.PeriodicCallback(self.start, 2000)
+        self.hb = ioloop.PeriodicCallback(self.start, 5000)
         self.hb.start()
 
     def on_message(self, message):
