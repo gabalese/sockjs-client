@@ -14,7 +14,7 @@ async def sockjs_connect(request):
     for connection in (websocket_connect, xhr_streaming_connect):
         try:
             conn = await connection(request)
-        except (WebSocketError, XHRStreamingConnectionError):
+        except (WebSocketError, XHRStreamingConnectionError, ConnectionError):
             logging.debug("Unable to connect using {}".format(connection.__name__))
         except Exception:
             logging.exception("Uncaught exception!")

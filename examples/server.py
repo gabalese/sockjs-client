@@ -14,7 +14,7 @@ class SimpleEchoClient(SockJSConnection):
         self.hb.start()
 
     def on_message(self, message):
-        self.send(f"I received a message! {message}")
+        print(f"I received a message! {message}")
 
     def on_close(self):
         print(f"Closing {self.session}")

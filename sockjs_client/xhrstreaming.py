@@ -1,4 +1,5 @@
 import asyncio
+import functools
 import json
 import logging
 import random
@@ -6,7 +7,6 @@ import string
 from http.client import HTTPConnection
 from urllib.parse import urlparse
 
-from tornado.concurrent import Future, future_set_result_unless_cancelled
 from tornado.httpclient import HTTPRequest
 
 
@@ -27,63 +27,74 @@ class XHRStreamingClientConnection:
 
         self.io_loop = asyncio.get_event_loop()
 
-        self.read_queue = asyncio.Queue(maxsize=2048)
+        self.read_queue = asyncio.Queue(maxsize=1024)
 
-        self.connect_future = Future()
+        self.connect_future = asyncio.Future()
 
         self.client_id = ''.join(random.choices(string.digits, k=5))
         self.connection_id = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
 
-        self.conn = HTTPConnection(self.host, self.port)
-        self.read_resp = None
+        self.read_connection = HTTPConnection(self.host, self.port)
+        self.read_stream = None
 
         self.base_url = f'{self.endpoint}/{self.client_id}/{self.connection_id}'
         self.connect()
 
     @property
     def running(self):
-        return self.read_resp is not None
+        return self.read_stream is not None
 
     def connect(self):
         try:
             streaming_url = f"{self.base_url}/xhr_streaming"
-            self.conn.request('POST', streaming_url)
-            self.read_resp = self.conn.getresponse()
-            if self.read_resp.status != 200:
-                self.conn.close()
+            self.read_connection.request('POST', streaming_url)
+            self.read_stream = self.read_connection.getresponse()
+
+            if self.read_stream.status != 200:
+                self.read_connection.close()
                 raise Exception("Closed connection")
-        except Exception as e:
-            # TODO: Handle this
+
+        except ConnectionError as e:
             self.connect_future.set_exception(XHRStreamingConnectionError(e))
             return
 
-        self._file_no = self.read_resp.fileno()
+        self._file_no = self.read_stream.fileno()
         self.io_loop.add_reader(self._file_no, self.on_fd_message)
-        future_set_result_unless_cancelled(self.connect_future, self)
+
+        self.connect_future.set_result(self)
 
     def close(self, code=None, reason=None):
-        self.io_loop.remove_reader(self.read_resp.fileno())
-        self.conn.close()
+        self.io_loop.remove_reader(self.read_stream.fileno())
+        self.read_connection.close()
 
     def on_fd_message(self):
-        if not self.read_resp.fp:
+        if not self.read_stream.fp:
             logging.debug("Cancelling reader")
             self.io_loop.remove_reader(self._file_no)
             self.read_queue.put_nowait(None)
-            self.read_resp = None
+            self.read_stream = None
             return
 
-        self.read_queue.put_nowait(self.read_resp.readline())
+        self.read_queue.put_nowait(self.read_stream.readline())
 
     async def write_message(self, message, binary=False):
+        write_connection = HTTPConnection(self.host, self.port)
         url = f'{self.base_url}/xhr_send'
-        local_conn = HTTPConnection(self.host, self.port)
-        local_conn.request('POST', url, body=json.dumps([message]), encode_chunked=False)
-        local_conn.close()
+        try:
+            await asyncio.wait_for(self.io_loop.run_in_executor(
+                None,
+                functools.partial(
+                    write_connection.request,
+                    'POST', url, body=json.dumps([message]), encode_chunked=False)
+            ), timeout=5)
+        except ConnectionError as e:
+            logging.error(e)
+        finally:
+            write_connection.close()
 
     async def read_message(self, **kwargs):
-        logging.debug("Await queue")
         msg = await self.read_queue.get()
+
         if msg is None:
             logging.debug("Queue is closed")
             return
@@ -107,7 +118,7 @@ class XHRStreamingClientConnection:
         pass
 
 
-def xhr_streaming_connect(request: HTTPRequest) -> Future:
+def xhr_streaming_connect(request: HTTPRequest) -> asyncio.Future:
     """
     Connect to a sockjs endpoint via xhr_streaming transport
     """

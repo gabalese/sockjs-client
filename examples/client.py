@@ -1,3 +1,6 @@
+import asyncio
+import random
+
 from tornado.httpclient import HTTPRequest
 from tornado.ioloop import IOLoop
 from tornado.web import gen
@@ -10,6 +13,7 @@ class WSConnecterPlayer:
 
         self.io_loop = IOLoop.current()
         self.io_loop.spawn_callback(self.main_loop)
+        self.io_loop.spawn_callback(self.write_loop)
 
         self.url = url
         self.conn = None
@@ -31,9 +35,15 @@ class WSConnecterPlayer:
             msg = yield self.conn.read_message()
             if msg:
                 print(msg)
-            else:
-                break
-        exit(1)
+
+    @gen.coroutine
+    def write_loop(self):
+        while True:
+            yield asyncio.sleep(1)
+            if random.choice((True, False)):
+                if not self.conn:
+                    break
+                yield self.conn.write_message("Message!")
 
     def close(self):
         self.conn.close()
