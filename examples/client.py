@@ -1,5 +1,6 @@
 import asyncio
 import random
+from asyncio import Future
 
 from tornado.httpclient import HTTPRequest
 from tornado.ioloop import IOLoop
@@ -17,6 +18,7 @@ class WSConnecterPlayer:
 
         self.url = url
         self.conn = None
+        self.connected = Future()
 
     @gen.coroutine
     def connect(self):
@@ -27,18 +29,20 @@ class WSConnecterPlayer:
             logging.exception("Unable to connect")
         except Exception as e:
             logging.exception("Uncaught generic exception")
+        self.connected.set_result(True)
 
     @gen.coroutine
     def main_loop(self):
         yield self.connect()
-        while self.conn:
+        while self.connected and self.conn:
             msg = yield self.conn.read_message()
             if msg:
                 print(msg)
 
     @gen.coroutine
     def write_loop(self):
-        while True:
+        yield self.connected
+        while self.conn:
             yield asyncio.sleep(1)
             if random.choice((True, False)):
                 if not self.conn:

@@ -7,8 +7,6 @@ import string
 from http.client import HTTPConnection
 from urllib.parse import urlparse
 
-from tornado.httpclient import HTTPRequest
-
 
 class XHRStreamingConnectionError(Exception):
     pass
@@ -16,14 +14,19 @@ class XHRStreamingConnectionError(Exception):
 
 class XHRStreamingClientConnection:
     """
-    Almost drop-in replacement for WebSocketClientConnection
-    which handles a SockJS XHR Streaming fallback
+    Almost drop-in replacement for WebSocketClientConnection class
+    which handles a SockJS XHR Streaming fallback.
     """
 
     def __init__(self, host, port=None, endpoint=None):
         self.host = host
-        self.port = port
-        self.endpoint = endpoint
+        self.port = port or 80
+        self.endpoint = endpoint or ''
+
+        self.client_id = ''.join(random.choices(string.digits, k=5))
+        self.connection_id = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+
+        self.base_url = f'{self.endpoint}/{self.client_id}/{self.connection_id}'
 
         self.io_loop = asyncio.get_event_loop()
 
@@ -31,18 +34,10 @@ class XHRStreamingClientConnection:
 
         self.connect_future = asyncio.Future()
 
-        self.client_id = ''.join(random.choices(string.digits, k=5))
-        self.connection_id = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
-
         self.read_connection = HTTPConnection(self.host, self.port)
         self.read_stream = None
 
-        self.base_url = f'{self.endpoint}/{self.client_id}/{self.connection_id}'
         self.connect()
-
-    @property
-    def running(self):
-        return self.read_stream is not None
 
     def connect(self):
         try:
@@ -106,23 +101,25 @@ class XHRStreamingClientConnection:
             logging.debug("Connection opened")
 
         if msg.startswith(b'c'):
-            logging.debug("Connection closed!")
+            logging.debug("Connection closed: %s", msg)
             return
 
         if msg.startswith((b'm', b'a')):
             logging.debug("Message received")
+            msg = self.decode_message(msg)
+            return msg[0]
 
         return msg
 
     def decode_message(self, raw_message: bytes) -> str:
-        pass
+        return json.loads(raw_message.lstrip(b'a'))
 
 
-def xhr_streaming_connect(request: HTTPRequest) -> asyncio.Future:
+def xhr_streaming_connect(http_request) -> asyncio.Future:
     """
     Connect to a sockjs endpoint via xhr_streaming transport
     """
-    url = request.url
+    url = http_request.url
     parsed = urlparse(url)
     conn = XHRStreamingClientConnection(host=parsed.netloc.split(':')[0], port=parsed.port, endpoint=parsed.path)
     return conn.connect_future
